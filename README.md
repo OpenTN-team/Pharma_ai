@@ -43,10 +43,7 @@ pharma_ai/
 │
 ├── app.py
 │
-├── data/
-│   ├── employees.json
-│   ├── schedule.json
-│   └── constraints.json
+├── data.py
 │
 └── agent/
     ├── agent.py
