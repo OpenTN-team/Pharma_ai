@@ -4,9 +4,11 @@ import plotly.graph_objects as go
 import html as html_lib
 from datetime import datetime
 from agent import configurer_gemini, chat_avec_agent
-from data import (EMPLOYES, PLANNING_SEMAINE, ABSENCES,ALERTES, METRIQUES, PHARMACIE)
-from store import load_store, reset_store 
+from data import (EMPLOYES, PLANNING_SEMAINE, ABSENCES,
+                  ALERTES, METRIQUES, PHARMACIE)
+from store import load_store, reset_store
 from Rulesengine import run_full_compliance_check
+from pdf_export import export_planning_pdf, export_conformite_pdf
 
 st.set_page_config(
     page_title="PharmAssist RH",
@@ -259,7 +261,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ─────────────────────────────────────────────
 # TABS
 # ─────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["💬 Agent IA", "📅 Planning", "👥 Équipe", "⚠️ Alertes", "✅ Conformité"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["💬 Agent IA", "📅 Planning", "👥 Équipe", "⚠️ Alertes", "✅ Conformité", "📋 Historique", "👤 Employés"])
 
 # ══════════════════════════════════════════════
 # TAB 1 — CHAT
@@ -574,3 +576,195 @@ with tab5:
         )
         st.plotly_chart(fig5, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════
+# TAB 6 — HISTORIQUE DES ACTIONS
+# ══════════════════════════════════════════════
+with tab6:
+    st.markdown("<div class='section-title'>📋 Historique des Actions RH</div>", unsafe_allow_html=True)
+
+    store_data = load_store()
+    historique = store_data.get("historique_actions", [])
+
+    col_h1, col_h2 = st.columns([3, 1])
+
+    with col_h1:
+        if not historique:
+            st.markdown("""
+            <div style='text-align:center; padding:40px; color:#4a6080;'>
+                <div style='font-size:2rem; margin-bottom:8px;'>📭</div>
+                <div>Aucune action enregistrée pour le moment.</div>
+                <div style='font-size:0.8rem; margin-top:6px;'>Les actions effectuées par l'agent apparaîtront ici.</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            # Afficher du plus récent au plus ancien
+            for action in reversed(historique):
+                action_type = action["action"]
+                ts = action["timestamp"]
+                details = action.get("details", {})
+
+                icons = {
+                    "create_absence": "🏥",
+                    "approve_absence": "✅",
+                    "reject_absence": "❌",
+                    "modify_planning": "📅",
+                    "generate_planning": "⚙️",
+                }
+                icon = icons.get(action_type, "🔧")
+                label = action_type.replace("_", " ").title()
+
+                details_str = " · ".join(f"<span style='color:#63b3ed'>{k}</span>: {v}"
+                                          for k, v in details.items()
+                                          if k not in ["remplace"])
+
+                st.markdown(f"""
+                <div style='background:rgba(99,179,237,0.05); border:1px solid rgba(99,179,237,0.12);
+                     border-left:3px solid #63b3ed; border-radius:8px;
+                     padding:12px 16px; margin-bottom:8px;'>
+                    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;'>
+                        <span style='font-weight:600; color:#e8eaf0; font-size:0.9rem;'>{icon} {label}</span>
+                        <span style='color:#4a6080; font-size:0.75rem;'>🕐 {ts}</span>
+                    </div>
+                    <div style='color:#7fb3d3; font-size:0.8rem;'>{details_str}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    with col_h2:
+        st.markdown("<div class='section-title' style='font-size:1rem;'>📊 Résumé</div>", unsafe_allow_html=True)
+
+        # Comptage par type
+        type_counts = {}
+        for a in historique:
+            t = a["action"].replace("_", " ").title()
+            type_counts[t] = type_counts.get(t, 0) + 1
+
+        for action_type, count in sorted(type_counts.items(), key=lambda x: -x[1]):
+            st.markdown(f"""
+            <div style='background:rgba(99,179,237,0.08); border:1px solid rgba(99,179,237,0.15);
+                 border-radius:8px; padding:10px 14px; margin-bottom:6px;
+                 display:flex; justify-content:space-between;'>
+                <span style='color:#e8eaf0; font-size:0.85rem;'>{action_type}</span>
+                <span style='color:#63b3ed; font-weight:700;'>{count}</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Export PDF buttons
+        st.markdown("<div class='section-title' style='font-size:1rem;'>📥 Exports PDF</div>", unsafe_allow_html=True)
+
+        try:
+            pdf_planning = export_planning_pdf()
+            st.download_button(
+                label="📅 Exporter le Planning",
+                data=pdf_planning,
+                file_name=f"planning_pharmassist_{datetime.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+        except Exception as e:
+            st.error(f"Erreur PDF planning: {e}")
+
+        try:
+            pdf_conformite = export_conformite_pdf()
+            st.download_button(
+                label="✅ Rapport de Conformité",
+                data=pdf_conformite,
+                file_name=f"conformite_pharmassist_{datetime.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+        except Exception as e:
+            st.error(f"Erreur PDF conformité: {e}")
+
+
+# ══════════════════════════════════════════════
+# TAB 7 — GESTION DES EMPLOYÉS
+# ══════════════════════════════════════════════
+with tab7:
+    st.markdown("<div class='section-title'>👤 Gestion des Employés</div>", unsafe_allow_html=True)
+
+    col_emp1, col_emp2 = st.columns([2, 1])
+
+    with col_emp1:
+        st.markdown("<p style='color:#7fb3d3; font-size:0.85rem; margin-bottom:16px;'>Équipe actuelle — modifications temporaires (session en cours)</p>", unsafe_allow_html=True)
+
+        for emp in EMPLOYES:
+            initiales = "".join([n[0] for n in emp["nom"].split()[:2]])
+            avatar_class = "avatar-pde" if emp["qualifie"] else "avatar-prep"
+            conge_color = "#fc8181" if emp["jours_conge_restants"] <= 3 else "#68d391"
+            st.markdown(f"""
+            <div class='employe-row'>
+                <div class='employe-avatar {avatar_class}'>{initiales}</div>
+                <div style='flex:1;'>
+                    <div style='font-weight:600; color:#e8eaf0;'>{emp["nom"]}</div>
+                    <div style='color:#7fb3d3; font-size:0.78rem;'>{emp["role"]}</div>
+                    <div style='color:#4a6080; font-size:0.72rem; margin-top:2px;'>
+                        Dispo: {", ".join(d.capitalize() for d in emp["disponibilites"])}
+                    </div>
+                </div>
+                <div style='text-align:right;'>
+                    <div style='color:#7fb3d3; font-size:0.82rem;'>{emp["heures_semaine"]}h/sem</div>
+                    <div style='color:{conge_color}; font-size:0.78rem;'>{emp["jours_conge_restants"]}j congés</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    with col_emp2:
+        st.markdown("<div class='section-title' style='font-size:1rem;'>➕ Nouvelle demande d'absence</div>", unsafe_allow_html=True)
+        st.markdown("<p style='color:#7fb3d3; font-size:0.78rem;'>Créer directement via ce formulaire ou demander à l'agent en chat.</p>", unsafe_allow_html=True)
+
+        with st.form("form_absence"):
+            emp_choix = st.selectbox("Employé", [e["nom"] for e in EMPLOYES])
+            date_absence = st.date_input("Date")
+            type_abs = st.selectbox("Type", ["Maladie", "Congé payé", "Congé sans solde", "Formation", "Autre"])
+            submitted = st.form_submit_button("Créer la demande", use_container_width=True)
+
+            if submitted:
+                if st.session_state.api_configuree:
+                    prompt = f"Crée une demande d'absence pour {emp_choix} le {date_absence.strftime('%Y-%m-%d')} de type {type_abs}"
+                    with st.spinner("Traitement..."):
+                        reponse, actions = chat_avec_agent(
+                            st.session_state.model,
+                            st.session_state.historique_chat,
+                            prompt
+                        )
+                    if actions and actions[0]["resultat"].get("succes"):
+                        st.success("✅ Demande créée !")
+                    else:
+                        st.warning(reponse[:200])
+                else:
+                    st.error("Agent inactif — vérifiez votre .env")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title' style='font-size:1rem;'>📋 Absences en attente</div>", unsafe_allow_html=True)
+
+        store_data = load_store()
+        en_attente = [a for a in store_data.get("absences", []) if a["statut"] == "En attente"]
+
+        if not en_attente:
+            st.markdown("<p style='color:#4a6080; font-size:0.82rem;'>Aucune absence en attente.</p>", unsafe_allow_html=True)
+        else:
+            for absence in en_attente:
+                col_a, col_b, col_c = st.columns([3, 1, 1])
+                with col_a:
+                    st.markdown(f"""
+                    <div style='padding:6px 0;'>
+                        <div style='color:#e8eaf0; font-size:0.85rem; font-weight:600;'>{absence["employe"]}</div>
+                        <div style='color:#7fb3d3; font-size:0.75rem;'>{absence["date"]} · {absence["type"]}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_b:
+                    if st.button("✅", key=f"app_{absence['employe']}_{absence['date']}", help="Approuver"):
+                        if st.session_state.api_configuree:
+                            prompt = f"Approuve l'absence de {absence['employe']} le {absence['date']}"
+                            reponse, _ = chat_avec_agent(st.session_state.model, st.session_state.historique_chat, prompt)
+                            st.rerun()
+                with col_c:
+                    if st.button("❌", key=f"rej_{absence['employe']}_{absence['date']}", help="Rejeter"):
+                        if st.session_state.api_configuree:
+                            prompt = f"Rejette l'absence de {absence['employe']} le {absence['date']}"
+                            reponse, _ = chat_avec_agent(st.session_state.model, st.session_state.historique_chat, prompt)
+                            st.rerun()
