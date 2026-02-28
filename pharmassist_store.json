@@ -1,0 +1,221 @@
+{
+  "planning": {
+    "lundi": {
+      "matin": [
+        "Sophie Martin",
+        "Marie Leroy",
+        "Julie Bernard",
+        "Pierre Moreau"
+      ],
+      "apres_midi": [
+        "Thomas Dupont",
+        "Marie Leroy",
+        "Julie Bernard"
+      ]
+    },
+    "mardi": {
+      "matin": [
+        "Pierre Moreau",
+        "Karim Benali",
+        "Marie Leroy"
+      ],
+      "apres_midi": [
+        "Sophie Martin",
+        "Karim Benali",
+        "Marie Leroy"
+      ]
+    },
+    "mercredi": {
+      "matin": [
+        "Pierre Moreau",
+        "Karim Benali"
+      ],
+      "apres_midi": [
+        "Sophie Martin"
+      ]
+    },
+    "jeudi": {
+      "matin": [
+        "Thomas Dupont",
+        "Karim Benali",
+        "Julie Bernard"
+      ],
+      "apres_midi": [
+        "Thomas Dupont",
+        "Marie Leroy",
+        "Karim Benali"
+      ]
+    },
+    "vendredi": {
+      "matin": [
+        "Sophie Martin",
+        "Julie Bernard"
+      ],
+      "apres_midi": [
+        "Thomas Dupont",
+        "Karim Benali",
+        "Julie Bernard"
+      ]
+    },
+    "samedi": {
+      "matin": [
+        "Pierre Moreau",
+        "Julie Bernard"
+      ],
+      "apres_midi": [
+        "Pierre Moreau",
+        "Julie Bernard"
+      ]
+    }
+  },
+  "absences": [
+    {
+      "employe": "Marie Leroy",
+      "date": "2025-03-05",
+      "type": "Maladie",
+      "statut": "Validée",
+      "remplacant": "Julie Bernard"
+    },
+    {
+      "employe": "Karim Benali",
+      "date": "2025-03-10",
+      "type": "Congé payé",
+      "statut": "En attente",
+      "remplacant": null
+    },
+    {
+      "employe": "Karim Benali",
+      "date": "2025-03-20",
+      "type": "Congé payé",
+      "statut": "Validée",
+      "remplacant": "Sophie Martin"
+    }
+  ],
+  "historique_actions": [
+    {
+      "timestamp": "28/02/2026 04:25",
+      "action": "create_absence",
+      "details": {
+        "employe": "Karim Benali",
+        "date": "2025-03-20",
+        "type": "Congé payé",
+        "statut": "En attente",
+        "remplacant": null
+      }
+    },
+    {
+      "timestamp": "28/02/2026 04:25",
+      "action": "approve_absence",
+      "details": {
+        "employe": "Karim Benali",
+        "date": "2025-03-20",
+        "remplacant": "Sophie Martin"
+      }
+    },
+    {
+      "timestamp": "28/02/2026 04:27",
+      "action": "generate_planning",
+      "details": {
+        "remplace": true,
+        "shifts_par_employe": {
+          "Sophie Martin": 4,
+          "Thomas Dupont": 4,
+          "Marie Leroy": 6,
+          "Karim Benali": 7,
+          "Julie Bernard": 8,
+          "Pierre Moreau": 4
+        }
+      }
+    },
+    {
+      "timestamp": "28/02/2026 04:28",
+      "action": "generate_planning",
+      "details": {
+        "remplace": true,
+        "shifts_par_employe": {
+          "Sophie Martin": 4,
+          "Thomas Dupont": 4,
+          "Marie Leroy": 6,
+          "Karim Benali": 7,
+          "Julie Bernard": 8,
+          "Pierre Moreau": 4
+        }
+      }
+    },
+    {
+      "timestamp": "28/02/2026 04:29",
+      "action": "modify_planning",
+      "details": {
+        "action": "ajouter",
+        "employe": "Pierre Moreau",
+        "jour": "lundi",
+        "shift": "matin"
+      }
+    },
+    {
+      "timestamp": "28/02/2026 04:29",
+      "action": "modify_planning",
+      "details": {
+        "action": "retirer",
+        "employe": "Sophie Martin",
+        "jour": "lundi",
+        "shift": "matin"
+      }
+    },
+    {
+      "timestamp": "28/02/2026 04:31",
+      "action": "generate_planning",
+      "details": {
+        "remplace": true,
+        "shifts_par_employe": {
+          "Sophie Martin": 4,
+          "Thomas Dupont": 4,
+          "Marie Leroy": 6,
+          "Karim Benali": 7,
+          "Julie Bernard": 8,
+          "Pierre Moreau": 4
+        }
+      }
+    },
+    {
+      "timestamp": "28/02/2026 04:33",
+      "action": "modify_planning",
+      "details": {
+        "action": "retirer",
+        "employe": "Marie Leroy",
+        "jour": "vendredi",
+        "shift": "matin"
+      }
+    },
+    {
+      "timestamp": "28/02/2026 04:33",
+      "action": "modify_planning",
+      "details": {
+        "action": "retirer",
+        "employe": "Karim Benali",
+        "jour": "samedi",
+        "shift": "matin"
+      }
+    },
+    {
+      "timestamp": "28/02/2026 04:33",
+      "action": "modify_planning",
+      "details": {
+        "action": "retirer",
+        "employe": "Julie Bernard",
+        "jour": "mercredi",
+        "shift": "apres_midi"
+      }
+    },
+    {
+      "timestamp": "28/02/2026 04:42",
+      "action": "modify_planning",
+      "details": {
+        "action": "ajouter",
+        "employe": "Pierre Moreau",
+        "jour": "lundi",
+        "shift": "matin"
+      }
+    }
+  ]
+}

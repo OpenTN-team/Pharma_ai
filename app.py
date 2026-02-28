@@ -4,8 +4,8 @@ import plotly.graph_objects as go
 import html as html_lib
 from datetime import datetime
 from agent import configurer_gemini, chat_avec_agent
-from data import (EMPLOYES, PLANNING_SEMAINE, ABSENCES,
-                  ALERTES, METRIQUES, PHARMACIE)
+from data import (EMPLOYES, PLANNING_SEMAINE, ABSENCES,ALERTES, METRIQUES, PHARMACIE)
+from store import load_store, reset_store 
 from Rulesengine import run_full_compliance_check
 
 st.set_page_config(
@@ -285,6 +285,14 @@ with tab1:
                 else:
                     contenu = html_lib.escape(msg['content']).replace('\n', '<br>')
                     chat_html += f"<div><div class='message-label-agent'>🤖 PharmAssist</div><div class='message-agent'>{contenu}</div></div>"
+                    # Show tool actions if any
+                    if msg.get('actions'):
+                        for act in msg['actions']:
+                            succes = act['resultat'].get('succes', True)
+                            icon = '✅' if succes else '❌'
+                            label = act['outil'].replace('_', ' ').title()
+                            msg_act = html_lib.escape(act['resultat'].get('message', ''))
+                            chat_html += f"<div style='margin: 4px 40px 4px 0; background: rgba(99,179,237,0.07); border: 1px solid rgba(99,179,237,0.2); border-radius: 8px; padding: 6px 12px; font-size:0.78rem; color:#7fb3d3;'>{icon} <strong>{label}</strong> — {msg_act}</div>"
         chat_html += "</div>"
         st.markdown(chat_html, unsafe_allow_html=True)
 
@@ -301,8 +309,8 @@ with tab1:
             else:
                 st.session_state.messages_affichage.append({"role": "user", "content": user_input})
                 with st.spinner("PharmAssist analyse..."):
-                    reponse = chat_avec_agent(st.session_state.model, st.session_state.historique_chat, user_input)
-                st.session_state.messages_affichage.append({"role": "agent", "content": reponse})
+                    reponse, actions = chat_avec_agent(st.session_state.model, st.session_state.historique_chat, user_input)
+                st.session_state.messages_affichage.append({"role": "agent", "content": reponse, "actions": actions})
                 st.rerun()
 
     with col_suggestions:
@@ -315,6 +323,8 @@ with tab1:
             ("⚖️ Règles légales", "Quelles sont les règles légales sur les heures de travail en pharmacie ?"),
             ("📊 Bilan RH", "Donne-moi un bilan RH de la semaine en cours"),
             ("✅ Conformité", "Quelles violations de conformité sont actives en ce moment ?"),
+            ("📋 Créer absence", "Crée une demande d'absence pour Karim Benali le 2025-03-15 de type Congé payé"),
+            ("⚙️ Générer planning", "Génère une proposition de planning pour la semaine, sans remplacer l'actuel"),
         ]
         for label, question in suggestions:
             if st.button(label, use_container_width=True, key=f"sug_{label}"):
@@ -323,13 +333,17 @@ with tab1:
                 else:
                     st.session_state.messages_affichage.append({"role": "user", "content": question})
                     with st.spinner("Analyse en cours..."):
-                        reponse = chat_avec_agent(st.session_state.model, st.session_state.historique_chat, question)
-                    st.session_state.messages_affichage.append({"role": "agent", "content": reponse})
+                        reponse, actions = chat_avec_agent(st.session_state.model, st.session_state.historique_chat, question)
+                    st.session_state.messages_affichage.append({"role": "agent", "content": reponse, "actions": actions})
                     st.rerun()
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🗑️ Effacer conversation", use_container_width=True):
             st.session_state.messages_affichage = []
             st.session_state.historique_chat = []
+            st.rerun()
+        if st.button("🔄 Réinitialiser les données", use_container_width=True):
+            reset_store()
+            st.success("Données réinitialisées")
             st.rerun()
 
 # ══════════════════════════════════════════════
@@ -339,12 +353,13 @@ with tab2:
     st.markdown("<div class='section-title'>📅 Planning de la Semaine</div>", unsafe_allow_html=True)
     jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"]
     jours_labels = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
+    _planning_live = load_store()["planning"]
     data_planning = []
     for emp in EMPLOYES:
         row = {"Employé": emp["nom"], "Rôle": "PDE 💊" if emp["qualifie"] else "Préparateur"}
         for jour, label in zip(jours, jours_labels):
-            present_matin = emp["nom"] in PLANNING_SEMAINE.get(jour, {}).get("matin", [])
-            present_am = emp["nom"] in PLANNING_SEMAINE.get(jour, {}).get("apres_midi", [])
+            present_matin = emp["nom"] in _planning_live.get(jour, {}).get("matin", [])
+            present_am = emp["nom"] in _planning_live.get(jour, {}).get("apres_midi", [])
             if present_matin and present_am:
                 row[label] = "✅ Journée"
             elif present_matin:

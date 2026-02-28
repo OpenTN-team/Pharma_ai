@@ -1,12 +1,20 @@
+"""
+agent.py — Agent PharmAssist avec tool calling Groq
+L'agent peut désormais agir : générer des plannings, créer/approuver des absences,
+modifier des shifts, lancer des vérifications de conformité.
+"""
+
 import os
+import json
 from groq import Groq
 from dotenv import load_dotenv
-from data import get_contexte_complet, EMPLOYES
-from Rulesengine import get_summary_for_chatbot, suggest_replacement
+from data import get_contexte_complet
+from Rulesengine import get_summary_for_chatbot
+from tools import TOOLS_SCHEMA, execute_tool
 
-# ============================================================
-# CONFIGURATION — Chargement depuis .env
-# ============================================================
+# ─────────────────────────────────────────────
+# CONFIGURATION
+# ─────────────────────────────────────────────
 
 load_dotenv()
 
@@ -15,104 +23,130 @@ def configurer_gemini():
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         raise ValueError("GROQ_API_KEY introuvable. Vérifiez votre fichier .env")
-    client = Groq(api_key=api_key)
-    return client
+    return Groq(api_key=api_key)
 
 
-# ============================================================
-# LOGIQUE DE REMPLACEMENT
-# ============================================================
+# ─────────────────────────────────────────────
+# SYSTEM PROMPT
+# ─────────────────────────────────────────────
 
-def trouver_remplacant(employe_absent: str, jour: str) -> dict:
-    """Trouve le meilleur remplaçant via le moteur de règles."""
-    suggestions = suggest_replacement(employe_absent, jour, "matin")  # shift par défaut
-
-    if not suggestions:
-        employe_info = next((e for e in EMPLOYES if e["nom"] == employe_absent), None)
-        est_pde = employe_info["qualifie"] if employe_info else False
-        if est_pde:
-            return {
-                "succes": False,
-                "alerte": "ALERTE CRITIQUE: Aucun pharmacien diplômé disponible !",
-                "message": "Impossible de couvrir ce créneau — contacter un remplaçant externe."
-            }
-        return {"succes": False, "message": "Aucun remplaçant disponible"}
-
-    meilleur = suggestions[0]
-    return {
-        "succes": True,
-        "remplacant": meilleur["nom"],
-        "role": meilleur["role"],
-        "message": f"{meilleur['nom']} ({meilleur['role']}) peut remplacer {employe_absent} le {jour}"
-    }
-
-
-# ============================================================
-# AGENT CONVERSATIONNEL
-# ============================================================
-
-def chat_avec_agent(client, historique: list, message_user: str) -> str:
-    try:
-        # Détecter absence et enrichir le message avec analyse système
-        mots_absence = ["absent", "absente", "malade", "conge", "congé", "remplacer", "remplacement"]
-        message_enrichi = message_user
-
-        if any(mot in message_user.lower() for mot in mots_absence):
-            for emp in EMPLOYES:
-                prenom = emp["nom"].split()[0]
-                if prenom.lower() in message_user.lower():
-                    jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"]
-                    jour_trouve = next((j for j in jours if j in message_user.lower()), "lundi")
-                    resultat = trouver_remplacant(emp["nom"], jour_trouve)
-                    message_enrichi = (
-                        f"{message_user}\n\n"
-                        f"[ANALYSE SYSTEME: Employe={emp['nom']}, Role={emp['role']}, Resultat={resultat}]"
-                    )
-                    break
-
-        historique.append({"role": "user", "content": message_enrichi})
-
-        # Rapport de conformité injecté dynamiquement à chaque appel
-        compliance_summary = get_summary_for_chatbot()
-
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {
-                    "role": "system",
-                    "content": f"""Tu es PharmAssist, un agent RH intelligent spécialisé pour les pharmacies françaises.
+def _build_system_prompt() -> str:
+    return f"""Tu es PharmAssist, un agent RH intelligent et autonome spécialisé pour les pharmacies françaises.
 Tu travailles pour la Pharmacie des Lilas à Lyon.
 
 TES RESPONSABILITÉS:
-1. Gérer les plannings des employés en respectant la Convention Collective Pharmacie (IDCC 1996)
-2. Traiter les demandes d'absence et proposer des remplaçants qualifiés
-3. Anticiper les périodes de surcharge (début de mois, épidémies saisonnières)
-4. Garantir qu'un Pharmacien Diplômé d'État (PDE) est TOUJOURS présent à l'ouverture
-5. Respecter les 35h/semaine et le repos obligatoire
+1. Gérer les plannings en respectant la Convention Collective Pharmacie (IDCC 1996)
+2. Traiter les demandes d'absence : création, approbation, rejet
+3. Anticiper les surcharges et alerter proactivement
+4. Garantir qu'un Pharmacien Diplômé d'État (PDE) est TOUJOURS présent
+5. Respecter les 35h/semaine et les disponibilités de chaque employé
 
-RÈGLES ABSOLUES:
-- JAMAIS de créneau sans pharmacien diplômé (PDE)
-- Maximum 10h de travail par jour par employé
-- Respecter les disponibilités de chaque employé
+RÈGLES ABSOLUES (IDCC 1996):
+- JAMAIS de créneau sans pharmacien diplômé (PDE) — infraction légale
+- Maximum 10h de travail par jour
+- Repos hebdomadaire le dimanche obligatoire
+- Congés payés: 25 jours ouvrés minimum par an
+
+COMMENT AGIR:
+- Quand on te demande d'effectuer une action (créer une absence, modifier un planning, etc.),
+  utilise TOUJOURS l'outil approprié plutôt que de simplement décrire ce que tu ferais.
+- Après chaque action, confirme ce qui a été fait et signale toute violation détectée.
+- Si une action violerait une règle légale, REFUSE et explique pourquoi.
+- Cite toujours la règle IDCC 1996 appliquée dans tes décisions.
 
 DONNÉES EN TEMPS RÉEL:
 {get_contexte_complet()}
 
-RAPPORT DE CONFORMITÉ (Moteur de règles — résultats en temps réel):
-{compliance_summary}
+RAPPORT DE CONFORMITÉ ACTUEL:
+{get_summary_for_chatbot()}
 
-STYLE: Réponds toujours en français, sois précis et professionnel.
-Cite toujours la règle légale appliquée dans tes décisions.
-Si des violations critiques sont présentes dans le rapport de conformité, mentionne-les proactivement."""
-                }
-            ] + historique,
-            max_tokens=1024,
-            temperature=0.7,
+STYLE: Français, précis, professionnel. Confirme chaque action effectuée clairement."""
+
+
+# ─────────────────────────────────────────────
+# BOUCLE TOOL CALLING
+# ─────────────────────────────────────────────
+
+def chat_avec_agent(client: Groq, historique: list, message_user: str) -> tuple[str, list]:
+    """
+    Envoie un message à l'agent et exécute la boucle tool calling complète.
+
+    Returns:
+        (reponse_finale: str, actions_effectuees: list)
+        actions_effectuees contient les outils appelés et leurs résultats.
+    """
+    historique.append({"role": "user", "content": message_user})
+    actions_effectuees = []
+
+    messages = [{"role": "system", "content": _build_system_prompt()}] + historique
+
+    # Boucle tool calling — max 5 tours pour éviter les boucles infinies
+    for _ in range(5):
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=messages,
+            tools=TOOLS_SCHEMA,
+            tool_choice="auto",
+            max_tokens=2048,
+            temperature=0.3,
         )
 
-        reponse_text = response.choices[0].message.content
-        historique.append({"role": "assistant", "content": reponse_text})
-        return reponse_text
+        message = response.choices[0].message
+        finish_reason = response.choices[0].finish_reason
 
-    except Exception as e:
-        return f"Erreur: {str(e)}"
+        # Pas d'appel d'outil — réponse finale
+        if finish_reason == "stop" or not message.tool_calls:
+            reponse_finale = message.content or ""
+            historique.append({"role": "assistant", "content": reponse_finale})
+            return reponse_finale, actions_effectuees
+
+        # L'agent veut appeler un ou plusieurs outils
+        messages.append({
+            "role": "assistant",
+            "content": message.content,
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments
+                    }
+                }
+                for tc in message.tool_calls
+            ]
+        })
+
+        # Exécuter chaque outil et ajouter les résultats
+        for tool_call in message.tool_calls:
+            tool_name = tool_call.function.name
+            try:
+                tool_args = json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError:
+                tool_args = {}
+
+            tool_result = execute_tool(tool_name, tool_args)
+
+            actions_effectuees.append({
+                "outil": tool_name,
+                "arguments": tool_args,
+                "resultat": json.loads(tool_result)
+            })
+
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": tool_result
+            })
+
+    # Épuisement des tours — demander une conclusion
+    messages.append({"role": "user", "content": "Résume les actions effectuées et leur résultat."})
+    final = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=messages,
+        max_tokens=1024,
+        temperature=0.3,
+    )
+    reponse_finale = final.choices[0].message.content or ""
+    historique.append({"role": "assistant", "content": reponse_finale})
+    return reponse_finale, actions_effectuees
