@@ -6,6 +6,7 @@ from datetime import datetime
 from agent import configurer_gemini, chat_avec_agent
 from data import (EMPLOYES, PLANNING_SEMAINE, ABSENCES,
                   ALERTES, METRIQUES, PHARMACIE)
+from Rulesengine import run_full_compliance_check
 
 st.set_page_config(
     page_title="PharmAssist RH",
@@ -89,9 +90,16 @@ html, body, [class*="css"] {
     border-left: 4px solid #f6ad55;
     border-radius: 10px; padding: 14px 18px; margin-bottom: 10px;
 }
+.alerte-vert {
+    background: rgba(104, 211, 145, 0.08);
+    border: 1px solid rgba(104, 211, 145, 0.35);
+    border-left: 4px solid #68d391;
+    border-radius: 10px; padding: 14px 18px; margin-bottom: 10px;
+}
 .alerte-title { font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px; }
 .alerte-rouge .alerte-title { color: #fc8181; }
 .alerte-orange .alerte-title { color: #f6ad55; }
+.alerte-vert .alerte-title { color: #68d391; }
 .alerte-message { font-size: 0.9rem; color: #c4d4e3; }
 .employe-row {
     display: flex; align-items: center;
@@ -137,6 +145,12 @@ html, body, [class*="css"] {
 .stTabs [data-baseweb="tab-list"] { background: transparent; border-bottom: 1px solid rgba(99, 179, 237, 0.15); }
 .stTabs [data-baseweb="tab"] { background: transparent; color: #7fb3d3; }
 .stTabs [aria-selected="true"] { background: rgba(99, 179, 237, 0.1) !important; color: #63b3ed !important; border-bottom: 2px solid #63b3ed !important; }
+.score-circle {
+    width: 120px; height: 120px; border-radius: 50%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    margin: 0 auto 20px auto;
+    font-family: 'DM Serif Display', serif;
+}
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: #0a0e1a; }
 ::-webkit-scrollbar-thumb { background: rgba(99, 179, 237, 0.3); border-radius: 3px; }
@@ -144,7 +158,9 @@ hr { border-color: rgba(99, 179, 237, 0.1) !important; }
 </style>
 """, unsafe_allow_html=True)
 
+# ─────────────────────────────────────────────
 # SESSION STATE
+# ─────────────────────────────────────────────
 if "model" not in st.session_state:
     st.session_state.model = None
 if "historique_chat" not in st.session_state:
@@ -154,7 +170,17 @@ if "messages_affichage" not in st.session_state:
 if "api_configuree" not in st.session_state:
     st.session_state.api_configuree = False
 
+# Auto-connect depuis .env au démarrage
+if not st.session_state.api_configuree:
+    try:
+        st.session_state.model = configurer_gemini()
+        st.session_state.api_configuree = True
+    except Exception:
+        st.session_state.api_configuree = False
+
+# ─────────────────────────────────────────────
 # SIDEBAR
+# ─────────────────────────────────────────────
 with st.sidebar:
     st.markdown("""
     <div style='text-align:center; padding: 10px 0 20px 0;'>
@@ -164,23 +190,25 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
     st.divider()
-    st.markdown("<p style='color:#7fb3d3; font-size:0.82rem; font-weight:600; text-transform:uppercase;'>🔑 Configuration API</p>", unsafe_allow_html=True)
-    api_key = st.text_input("Clé Gemini API", type="password", placeholder="AIzaSy...", label_visibility="collapsed")
-    if st.button("⚡ Connecter l'agent", use_container_width=True):
-        if api_key:
-            try:
-                st.session_state.model = configurer_gemini(api_key)
-                st.session_state.api_configuree = True
-                st.success("✅ Agent connecté !")
-            except Exception as e:
-                st.error(f"❌ Erreur: {str(e)}")
-        else:
-            st.warning("Entre ta clé API")
-    st.divider()
+
+    # Statut de connexion
     if st.session_state.api_configuree:
-        st.markdown("<div style='background: rgba(104, 211, 145, 0.1); border: 1px solid rgba(104, 211, 145, 0.3); border-radius: 10px; padding: 12px; text-align: center;'><div style='color: #68d391; font-weight: 600; font-size: 0.85rem;'>● Agent Actif</div><div style='color: #7fb3d3; font-size: 0.75rem; margin-top: 4px;'>Gemini Flash</div></div>", unsafe_allow_html=True)
+        st.markdown("""
+        <div style='background: rgba(104, 211, 145, 0.1); border: 1px solid rgba(104, 211, 145, 0.3);
+             border-radius: 10px; padding: 12px; text-align: center;'>
+            <div style='color: #68d391; font-weight: 600; font-size: 0.85rem;'>● Agent Actif</div>
+            <div style='color: #7fb3d3; font-size: 0.75rem; margin-top: 4px;'>Groq · LLaMA 3.3 70B</div>
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        st.markdown("<div style='background: rgba(252, 129, 129, 0.08); border: 1px solid rgba(252, 129, 129, 0.25); border-radius: 10px; padding: 12px; text-align: center;'><div style='color: #fc8181; font-weight: 600; font-size: 0.85rem;'>● Agent Inactif</div><div style='color: #7fb3d3; font-size: 0.75rem; margin-top: 4px;'>Entrez votre clé API</div></div>", unsafe_allow_html=True)
+        st.markdown("""
+        <div style='background: rgba(252, 129, 129, 0.08); border: 1px solid rgba(252, 129, 129, 0.25);
+             border-radius: 10px; padding: 12px; text-align: center;'>
+            <div style='color: #fc8181; font-weight: 600; font-size: 0.85rem;'>● Agent Inactif</div>
+            <div style='color: #7fb3d3; font-size: 0.75rem; margin-top: 4px;'>GROQ_API_KEY manquante dans .env</div>
+        </div>
+        """, unsafe_allow_html=True)
+
     st.divider()
     st.markdown(f"""
     <div style='padding: 4px 0;'>
@@ -193,7 +221,9 @@ with st.sidebar:
     st.divider()
     st.markdown("<p style='color:#4a6080; font-size:0.72rem; text-align:center;'>Convention Collective IDCC 1996<br>Pharmacie d'officine — France</p>", unsafe_allow_html=True)
 
+# ─────────────────────────────────────────────
 # HEADER
+# ─────────────────────────────────────────────
 st.markdown(f"""
 <div class='main-header'>
     <div class='header-badge'>Agent RH • IA Générative</div>
@@ -202,8 +232,14 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# ─────────────────────────────────────────────
 # MÉTRIQUES
-c1, c2, c3, c4, c5 = st.columns(5)
+# ─────────────────────────────────────────────
+rapport = run_full_compliance_check()
+score = rapport["rapport"]["score_conformite"]
+score_color = "green" if score >= 90 else "orange" if score >= 75 else "red"
+
+c1, c2, c3, c4, c5, c6 = st.columns(6)
 with c1:
     st.markdown(f"<div class='metric-card'><div class='metric-value green'>{METRIQUES['taux_couverture']}%</div><div class='metric-label'>Taux de couverture</div></div>", unsafe_allow_html=True)
 with c2:
@@ -215,13 +251,19 @@ with c4:
     st.markdown(f"<div class='metric-card'><div class='metric-value orange'>{METRIQUES['absences_ce_mois']}</div><div class='metric-label'>Absences ce mois</div></div>", unsafe_allow_html=True)
 with c5:
     st.markdown(f"<div class='metric-card'><div class='metric-value red'>{METRIQUES['alertes_actives']}</div><div class='metric-label'>Alertes actives</div></div>", unsafe_allow_html=True)
+with c6:
+    st.markdown(f"<div class='metric-card'><div class='metric-value {score_color}'>{score}%</div><div class='metric-label'>Score conformité</div></div>", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
+# ─────────────────────────────────────────────
 # TABS
-tab1, tab2, tab3, tab4 = st.tabs(["💬 Agent IA", "📅 Planning", "👥 Équipe", "⚠️ Alertes"])
+# ─────────────────────────────────────────────
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["💬 Agent IA", "📅 Planning", "👥 Équipe", "⚠️ Alertes", "✅ Conformité"])
 
+# ══════════════════════════════════════════════
 # TAB 1 — CHAT
+# ══════════════════════════════════════════════
 with tab1:
     col_chat, col_suggestions = st.columns([2, 1])
     with col_chat:
@@ -252,9 +294,10 @@ with tab1:
                 user_input = st.text_input("Message", placeholder="Ex: Marie est absente demain matin, qui peut la remplacer ?", label_visibility="collapsed")
             with col_send:
                 send = st.form_submit_button("Envoyer →", use_container_width=True)
+
         if send and user_input:
             if not st.session_state.api_configuree:
-                st.error("⚠️ Configurez d'abord votre clé API dans la sidebar")
+                st.error("⚠️ Agent inactif — vérifiez GROQ_API_KEY dans votre fichier .env")
             else:
                 st.session_state.messages_affichage.append({"role": "user", "content": user_input})
                 with st.spinner("PharmAssist analyse..."):
@@ -271,11 +314,12 @@ with tab1:
             ("📋 Congés Karim", "Karim demande un congé payé du 15 au 19 mars, est-ce possible ?"),
             ("⚖️ Règles légales", "Quelles sont les règles légales sur les heures de travail en pharmacie ?"),
             ("📊 Bilan RH", "Donne-moi un bilan RH de la semaine en cours"),
+            ("✅ Conformité", "Quelles violations de conformité sont actives en ce moment ?"),
         ]
         for label, question in suggestions:
             if st.button(label, use_container_width=True, key=f"sug_{label}"):
                 if not st.session_state.api_configuree:
-                    st.error("⚠️ Configurez d'abord votre clé API")
+                    st.error("⚠️ Agent inactif — vérifiez votre fichier .env")
                 else:
                     st.session_state.messages_affichage.append({"role": "user", "content": question})
                     with st.spinner("Analyse en cours..."):
@@ -288,7 +332,9 @@ with tab1:
             st.session_state.historique_chat = []
             st.rerun()
 
+# ══════════════════════════════════════════════
 # TAB 2 — PLANNING
+# ══════════════════════════════════════════════
 with tab2:
     st.markdown("<div class='section-title'>📅 Planning de la Semaine</div>", unsafe_allow_html=True)
     jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"]
@@ -338,7 +384,9 @@ with tab2:
         fig2.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#7fb3d3'), margin=dict(l=20, r=20, t=30, b=20), height=250)
         st.plotly_chart(fig2, use_container_width=True)
 
+# ══════════════════════════════════════════════
 # TAB 3 — ÉQUIPE
+# ══════════════════════════════════════════════
 with tab3:
     st.markdown("<div class='section-title'>👥 Équipe de la Pharmacie</div>", unsafe_allow_html=True)
     col_e1, col_e2 = st.columns([3, 2])
@@ -380,7 +428,9 @@ with tab3:
             </div>
             """, unsafe_allow_html=True)
 
+# ══════════════════════════════════════════════
 # TAB 4 — ALERTES
+# ══════════════════════════════════════════════
 with tab4:
     st.markdown("<div class='section-title'>⚠️ Alertes & Anticipation</div>", unsafe_allow_html=True)
     col_a1, col_a2 = st.columns([3, 2])
@@ -400,3 +450,112 @@ with tab4:
         fig4.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#7fb3d3'), margin=dict(l=20, r=20, t=20, b=20), height=250, xaxis=dict(gridcolor='rgba(99,179,237,0.1)'), yaxis=dict(gridcolor='rgba(99,179,237,0.1)', title=dict(text='Indice de charge', font=dict(color='#7fb3d3'))))
         st.plotly_chart(fig4, use_container_width=True)
         st.markdown("<div style='font-size:0.78rem; color:#4a6080; line-height:1.6;'>🔴 Rouge : surcharge critique (≥85)<br>🟠 Orange : charge élevée (≥75)<br>🔵 Bleu : activité normale</div>", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════
+# TAB 5 — CONFORMITÉ (nouveau)
+# ══════════════════════════════════════════════
+with tab5:
+    st.markdown("<div class='section-title'>✅ Rapport de Conformité — Convention IDCC 1996</div>", unsafe_allow_html=True)
+
+    r = rapport["rapport"]
+    score_color_hex = "#68d391" if r["score_conformite"] >= 90 else "#f6ad55" if r["score_conformite"] >= 75 else "#fc8181"
+    border_color = "rgba(104,211,145,0.4)" if r["score_conformite"] >= 90 else "rgba(246,173,85,0.4)" if r["score_conformite"] >= 75 else "rgba(252,129,129,0.4)"
+
+    # Score global + compteurs
+    col_score, col_stats = st.columns([1, 3])
+    with col_score:
+        st.markdown(f"""
+        <div style='background: rgba(13,31,60,0.8); border: 2px solid {border_color};
+             border-radius: 16px; padding: 30px 20px; text-align: center;'>
+            <div style='font-family: DM Serif Display, serif; font-size: 3.5rem;
+                 color: {score_color_hex}; line-height:1;'>{r["score_conformite"]}%</div>
+            <div style='color:#7fb3d3; font-size:0.8rem; text-transform:uppercase;
+                 letter-spacing:0.8px; margin-top:8px;'>Score de conformité</div>
+            <div style='color:#4a6080; font-size:0.72rem; margin-top:6px;'>{r["date_analyse"]}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_stats:
+        cs1, cs2, cs3, cs4 = st.columns(4)
+        with cs1:
+            st.markdown(f"<div class='metric-card'><div class='metric-value'>{r['total_verifications']}</div><div class='metric-label'>Vérifications</div></div>", unsafe_allow_html=True)
+        with cs2:
+            st.markdown(f"<div class='metric-card'><div class='metric-value green'>{r['conformes']}</div><div class='metric-label'>Conformes</div></div>", unsafe_allow_html=True)
+        with cs3:
+            st.markdown(f"<div class='metric-card'><div class='metric-value red'>{r['violations_critiques']}</div><div class='metric-label'>Critiques 🔴</div></div>", unsafe_allow_html=True)
+        with cs4:
+            st.markdown(f"<div class='metric-card'><div class='metric-value orange'>{r['violations_mineures']}</div><div class='metric-label'>Mineures 🟠</div></div>", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    col_v1, col_v2 = st.columns(2)
+
+    with col_v1:
+        # Violations critiques
+        if rapport["violations_critiques"]:
+            st.markdown("<p style='color:#fc8181; font-weight:600; font-size:0.85rem; text-transform:uppercase; letter-spacing:0.8px;'>🔴 Violations Critiques</p>", unsafe_allow_html=True)
+            for v in rapport["violations_critiques"]:
+                st.markdown(f"""
+                <div class='alerte-rouge'>
+                    <div class='alerte-title'>{v['code']}</div>
+                    <div class='alerte-message'>{v['message']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class='alerte-vert'>
+                <div class='alerte-title'>✅ Aucune violation critique</div>
+                <div class='alerte-message'>Toutes les règles obligatoires sont respectées.</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Violations mineures
+        if rapport["violations_mineures"]:
+            st.markdown("<p style='color:#f6ad55; font-weight:600; font-size:0.85rem; text-transform:uppercase; letter-spacing:0.8px; margin-top:16px;'>🟠 Violations Mineures</p>", unsafe_allow_html=True)
+            for v in rapport["violations_mineures"]:
+                st.markdown(f"""
+                <div class='alerte-orange'>
+                    <div class='alerte-title'>{v['code']}</div>
+                    <div class='alerte-message'>{v['message']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    with col_v2:
+        # Points conformes (résumé)
+        st.markdown("<p style='color:#68d391; font-weight:600; font-size:0.85rem; text-transform:uppercase; letter-spacing:0.8px;'>✅ Points Conformes</p>", unsafe_allow_html=True)
+        conformes_uniques = {}
+        for v in rapport["points_conformes"]:
+            code = v["code"]
+            if code not in conformes_uniques:
+                conformes_uniques[code] = {"message": v["message"], "count": 1}
+            else:
+                conformes_uniques[code]["count"] += 1
+
+        for code, info in conformes_uniques.items():
+            count_badge = f" <span style='color:#4a6080;'>×{info['count']}</span>" if info["count"] > 1 else ""
+            st.markdown(f"""
+            <div class='alerte-vert' style='padding: 10px 14px; margin-bottom: 6px;'>
+                <div style='font-size:0.82rem; color:#68d391; font-weight:600;'>{code}{count_badge}</div>
+                <div style='font-size:0.8rem; color:#c4d4e3; margin-top:2px;'>{info["message"]}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Graphique camembert violations vs conformes
+        st.markdown("<div style='margin-top: 16px;'>", unsafe_allow_html=True)
+        fig5 = go.Figure(data=[go.Pie(
+            labels=['Conformes', 'Violations critiques', 'Violations mineures'],
+            values=[r["conformes"], r["violations_critiques"], r["violations_mineures"]],
+            hole=0.55,
+            marker=dict(
+                colors=['rgba(104,211,145,0.8)', 'rgba(252,129,129,0.8)', 'rgba(246,173,85,0.8)'],
+                line=dict(color=['#68d391', '#fc8181', '#f6ad55'], width=2)
+            ),
+            textfont=dict(color='white', size=11)
+        )])
+        fig5.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#7fb3d3'), legend=dict(bgcolor='rgba(0,0,0,0)'),
+            margin=dict(l=10, r=10, t=10, b=10), height=220,
+            annotations=[dict(text='Bilan', x=0.5, y=0.5, font_size=14, font_color='#e8eaf0', showarrow=False)]
+        )
+        st.plotly_chart(fig5, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)

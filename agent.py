@@ -1,33 +1,35 @@
+import os
 from groq import Groq
+from dotenv import load_dotenv
 from data import get_contexte_complet, EMPLOYES
+from Rulesengine import get_summary_for_chatbot, suggest_replacement
 
 # ============================================================
-# CONFIGURATION GROQ
+# CONFIGURATION — Chargement depuis .env
 # ============================================================
 
-def configurer_gemini(api_key: str):
-    """Configure le client Groq (nom gardé pour compatibilité avec app.py)"""
+load_dotenv()
+
+def configurer_gemini():
+    """Initialise le client Groq depuis la variable d'environnement GROQ_API_KEY."""
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise ValueError("GROQ_API_KEY introuvable. Vérifiez votre fichier .env")
     client = Groq(api_key=api_key)
     return client
 
 
+# ============================================================
+# LOGIQUE DE REMPLACEMENT
+# ============================================================
+
 def trouver_remplacant(employe_absent: str, jour: str) -> dict:
-    employe_info = next((e for e in EMPLOYES if e["nom"] == employe_absent), None)
-    if not employe_info:
-        return {"succes": False, "message": "Employé introuvable"}
+    """Trouve le meilleur remplaçant via le moteur de règles."""
+    suggestions = suggest_replacement(employe_absent, jour, "matin")  # shift par défaut
 
-    est_pde = employe_info["qualifie"]
-    candidats = []
-    for emp in EMPLOYES:
-        if emp["nom"] == employe_absent:
-            continue
-        if jour.lower() not in emp["disponibilites"]:
-            continue
-        if est_pde and not emp["qualifie"]:
-            continue
-        candidats.append(emp)
-
-    if not candidats:
+    if not suggestions:
+        employe_info = next((e for e in EMPLOYES if e["nom"] == employe_absent), None)
+        est_pde = employe_info["qualifie"] if employe_info else False
         if est_pde:
             return {
                 "succes": False,
@@ -36,7 +38,7 @@ def trouver_remplacant(employe_absent: str, jour: str) -> dict:
             }
         return {"succes": False, "message": "Aucun remplaçant disponible"}
 
-    meilleur = min(candidats, key=lambda x: x["heures_semaine"])
+    meilleur = suggestions[0]
     return {
         "succes": True,
         "remplacant": meilleur["nom"],
@@ -45,9 +47,13 @@ def trouver_remplacant(employe_absent: str, jour: str) -> dict:
     }
 
 
+# ============================================================
+# AGENT CONVERSATIONNEL
+# ============================================================
+
 def chat_avec_agent(client, historique: list, message_user: str) -> str:
     try:
-        # Détecter absence et enrichir le message
+        # Détecter absence et enrichir le message avec analyse système
         mots_absence = ["absent", "absente", "malade", "conge", "congé", "remplacer", "remplacement"]
         message_enrichi = message_user
 
@@ -58,13 +64,17 @@ def chat_avec_agent(client, historique: list, message_user: str) -> str:
                     jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"]
                     jour_trouve = next((j for j in jours if j in message_user.lower()), "lundi")
                     resultat = trouver_remplacant(emp["nom"], jour_trouve)
-                    message_enrichi = f"{message_user}\n\n[ANALYSE SYSTEME: Employe={emp['nom']}, Role={emp['role']}, Resultat={resultat}]"
+                    message_enrichi = (
+                        f"{message_user}\n\n"
+                        f"[ANALYSE SYSTEME: Employe={emp['nom']}, Role={emp['role']}, Resultat={resultat}]"
+                    )
                     break
 
-        # Ajouter à l'historique
         historique.append({"role": "user", "content": message_enrichi})
 
-        # Appel Groq
+        # Rapport de conformité injecté dynamiquement à chaque appel
+        compliance_summary = get_summary_for_chatbot()
+
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
@@ -88,8 +98,12 @@ RÈGLES ABSOLUES:
 DONNÉES EN TEMPS RÉEL:
 {get_contexte_complet()}
 
+RAPPORT DE CONFORMITÉ (Moteur de règles — résultats en temps réel):
+{compliance_summary}
+
 STYLE: Réponds toujours en français, sois précis et professionnel.
-Cite toujours la règle légale appliquée dans tes décisions."""
+Cite toujours la règle légale appliquée dans tes décisions.
+Si des violations critiques sont présentes dans le rapport de conformité, mentionne-les proactivement."""
                 }
             ] + historique,
             max_tokens=1024,
@@ -97,10 +111,7 @@ Cite toujours la règle légale appliquée dans tes décisions."""
         )
 
         reponse_text = response.choices[0].message.content
-
-        # Sauvegarder la réponse
         historique.append({"role": "assistant", "content": reponse_text})
-
         return reponse_text
 
     except Exception as e:
