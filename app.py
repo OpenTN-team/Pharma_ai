@@ -3,10 +3,10 @@ import pandas as pd
 import plotly.graph_objects as go
 import html as html_lib
 from datetime import datetime
-from agent import configurer_gemini, chat_avec_agent
+from agent import configurer_gemini, chat_avec_agent, chat_employe
 from data import (EMPLOYES, PLANNING_SEMAINE, ABSENCES,
                   ALERTES, METRIQUES, PHARMACIE)
-from store import load_store, reset_store
+from store import load_store, reset_store, get_notifications, mark_notifications_read
 from Rulesengine import run_full_compliance_check
 from pdf_export import export_planning_pdf, export_conformite_pdf
 
@@ -171,6 +171,12 @@ if "messages_affichage" not in st.session_state:
     st.session_state.messages_affichage = []
 if "api_configuree" not in st.session_state:
     st.session_state.api_configuree = False
+if "employe_actif" not in st.session_state:
+    st.session_state.employe_actif = None
+if "historique_employe" not in st.session_state:
+    st.session_state.historique_employe = []
+if "messages_employe" not in st.session_state:
+    st.session_state.messages_employe = []
 
 # Auto-connect depuis .env au démarrage
 if not st.session_state.api_configuree:
@@ -222,6 +228,21 @@ with st.sidebar:
     """, unsafe_allow_html=True)
     st.divider()
     st.markdown("<p style='color:#4a6080; font-size:0.72rem; text-align:center;'>Convention Collective IDCC 1996<br>Pharmacie d'officine — France</p>", unsafe_allow_html=True)
+    st.divider()
+    st.markdown("<p style='color:#7fb3d3; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; font-weight:600; margin-bottom:8px;'>👤 Portail Employé</p>", unsafe_allow_html=True)
+    noms_employes = [e["nom"] for e in EMPLOYES]
+    employe_selectionne = st.selectbox("Se connecter en tant que", ["— Manager —"] + noms_employes, label_visibility="collapsed")
+    if employe_selectionne != "— Manager —":
+        if st.session_state.employe_actif != employe_selectionne:
+            st.session_state.employe_actif = employe_selectionne
+            st.session_state.historique_employe = []
+            st.session_state.messages_employe = []
+        notifs = get_notifications(employe_selectionne)
+        non_lues = len([n for n in notifs if not n["lu"]])
+        if non_lues > 0:
+            st.markdown(f"<div style='background:rgba(252,129,129,0.1);border:1px solid rgba(252,129,129,0.3);border-radius:8px;padding:8px 12px;color:#fc8181;font-size:0.82rem;'>🔔 {non_lues} notification(s) non lue(s)</div>", unsafe_allow_html=True)
+    else:
+        st.session_state.employe_actif = None
 
 # ─────────────────────────────────────────────
 # HEADER
@@ -261,7 +282,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ─────────────────────────────────────────────
 # TABS
 # ─────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["💬 Agent IA", "📅 Planning", "👥 Équipe", "⚠️ Alertes", "✅ Conformité", "📋 Historique", "👤 Employés"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["💬 Agent IA", "📅 Planning", "👥 Équipe", "⚠️ Alertes", "✅ Conformité", "📋 Historique", "👤 Employés", "🏠 Portail Employé"])
 
 # ══════════════════════════════════════════════
 # TAB 1 — CHAT
@@ -768,3 +789,186 @@ with tab7:
                             prompt = f"Rejette l'absence de {absence['employe']} le {absence['date']}"
                             reponse, _ = chat_avec_agent(st.session_state.model, st.session_state.historique_chat, prompt)
                             st.rerun()
+
+
+# ══════════════════════════════════════════════
+# TAB 8 — PORTAIL EMPLOYÉ
+# ══════════════════════════════════════════════
+with tab8:
+    if not st.session_state.employe_actif:
+        st.markdown("""
+        <div style='text-align:center; padding:60px 20px; color:#4a6080;'>
+            <div style='font-size:2.5rem; margin-bottom:12px;'>👤</div>
+            <div style='font-family: DM Serif Display, serif; font-size:1.2rem; color:#7fb3d3; margin-bottom:8px;'>
+                Portail Employé
+            </div>
+            <div style='font-size:0.88rem;'>
+                Sélectionnez votre nom dans la barre latérale gauche pour accéder à votre espace personnel.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        nom = st.session_state.employe_actif
+        emp_info = next((e for e in EMPLOYES if e["nom"] == nom), {})
+        store_data = load_store()
+        solde = store_data["employes_soldes"].get(nom, 0)
+        notifs = get_notifications(nom)
+        non_lues = [n for n in notifs if not n["lu"]]
+
+        # En-tête employé
+        initiales = "".join([n[0] for n in nom.split()[:2]])
+        avatar_color = "#63b3ed" if emp_info.get("qualifie") else "#68d391"
+        st.markdown(f"""
+        <div style='background:linear-gradient(135deg,#0d1f3c,#132840);border:1px solid rgba(99,179,237,0.2);
+             border-radius:14px;padding:20px 24px;margin-bottom:20px;display:flex;align-items:center;gap:16px;'>
+            <div style='width:52px;height:52px;border-radius:50%;background:{avatar_color};
+                 display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem;
+                 color:white;flex-shrink:0;'>{initiales}</div>
+            <div>
+                <div style='font-family:DM Serif Display,serif;font-size:1.3rem;color:#ffffff;'>{nom}</div>
+                <div style='color:#7fb3d3;font-size:0.85rem;'>{emp_info.get("role","")}</div>
+            </div>
+            <div style='margin-left:auto;text-align:right;'>
+                <div style='color:#68d391;font-size:1.4rem;font-weight:700;'>{solde}</div>
+                <div style='color:#7fb3d3;font-size:0.75rem;'>jours congés restants</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col_emp_chat, col_emp_info = st.columns([3, 2])
+
+        with col_emp_chat:
+            st.markdown("<div class='section-title'>💬 Mon Assistant RH</div>", unsafe_allow_html=True)
+
+            # Suggestions employé
+            suggestions_emp = [
+                ("📅 Mes shifts", "Quels sont mes shifts cette semaine ?"),
+                ("📋 Mes absences", "Montre-moi mes demandes d'absence en cours"),
+                ("🏖️ Poser un congé", f"Je voudrais poser un congé payé le 2025-03-20"),
+                ("🔔 Mes notifications", "Est-ce que j'ai des notifications ?"),
+                ("⚖️ Mes droits", "Combien de jours de congés me restent-il ?"),
+            ]
+            cols_sugg = st.columns(len(suggestions_emp))
+            for i, (label, question) in enumerate(suggestions_emp):
+                with cols_sugg[i]:
+                    if st.button(label, key=f"emp_sug_{i}", use_container_width=True):
+                        if st.session_state.api_configuree:
+                            st.session_state.messages_employe.append({"role": "user", "content": question})
+                            with st.spinner("..."):
+                                reponse, actions = chat_employe(
+                                    st.session_state.model,
+                                    st.session_state.historique_employe,
+                                    question,
+                                    nom
+                                )
+                            st.session_state.messages_employe.append({"role": "agent", "content": reponse})
+                            st.rerun()
+
+            # Fenêtre de chat employé
+            chat_html = "<div class='chat-container' style='min-height:320px;max-height:420px;'>"
+            if not st.session_state.messages_employe:
+                chat_html += f"""
+                <div style='text-align:center;padding:50px 20px;color:#4a6080;'>
+                    <div style='font-size:2rem;margin-bottom:10px;'>👋</div>
+                    <div style='color:#7fb3d3;font-size:0.95rem;'>Bonjour {nom.split()[0]} !</div>
+                    <div style='font-size:0.82rem;margin-top:6px;'>Posez une question ou utilisez les raccourcis ci-dessus.</div>
+                </div>"""
+            else:
+                for msg in st.session_state.messages_employe:
+                    if msg["role"] == "user":
+                        contenu = html_lib.escape(msg["content"])
+                        chat_html += f"<div><div class='message-label-user'>👤 {nom.split()[0]}</div><div class='message-user'>{contenu}</div></div>"
+                    else:
+                        contenu = html_lib.escape(msg["content"]).replace("\n", "<br>")
+                        chat_html += f"<div><div class='message-label-agent'>🤖 PharmAssist</div><div class='message-agent'>{contenu}</div></div>"
+            chat_html += "</div>"
+            st.markdown(chat_html, unsafe_allow_html=True)
+
+            with st.form("emp_chat_form", clear_on_submit=True):
+                col_ei, col_es = st.columns([5, 1])
+                with col_ei:
+                    emp_input = st.text_input("Message", placeholder="Ex: Je suis malade jeudi, comment faire ?", label_visibility="collapsed")
+                with col_es:
+                    emp_send = st.form_submit_button("Envoyer →", use_container_width=True)
+
+            if emp_send and emp_input:
+                if not st.session_state.api_configuree:
+                    st.error("Agent inactif — vérifiez votre .env")
+                else:
+                    st.session_state.messages_employe.append({"role": "user", "content": emp_input})
+                    with st.spinner("PharmAssist répond..."):
+                        reponse, actions = chat_employe(
+                            st.session_state.model,
+                            st.session_state.historique_employe,
+                            emp_input,
+                            nom
+                        )
+                    st.session_state.messages_employe.append({"role": "agent", "content": reponse})
+                    st.rerun()
+
+            if st.button("🗑️ Effacer conversation", key="clear_emp"):
+                st.session_state.messages_employe = []
+                st.session_state.historique_employe = []
+                st.rerun()
+
+        with col_emp_info:
+            # Notifications
+            st.markdown("<div class='section-title' style='font-size:1rem;'>🔔 Mes Notifications</div>", unsafe_allow_html=True)
+
+            if not notifs:
+                st.markdown("<p style='color:#4a6080;font-size:0.82rem;'>Aucune notification.</p>", unsafe_allow_html=True)
+            else:
+                for notif in reversed(notifs[-8:]):  # 8 dernières
+                    colors_map = {
+                        "urgent":  ("#fc8181", "rgba(252,129,129,0.08)", "rgba(252,129,129,0.3)"),
+                        "warning": ("#f6ad55", "rgba(246,173,85,0.08)",  "rgba(246,173,85,0.3)"),
+                        "success": ("#68d391", "rgba(104,211,145,0.08)", "rgba(104,211,145,0.3)"),
+                        "info":    ("#63b3ed", "rgba(99,179,237,0.08)",  "rgba(99,179,237,0.2)"),
+                    }
+                    text_c, bg_c, border_c = colors_map.get(notif["type"], colors_map["info"])
+                    lu_opacity = "0.5" if notif["lu"] else "1"
+                    icons = {"urgent": "🚨", "warning": "⚠️", "success": "✅", "info": "ℹ️"}
+                    icon = icons.get(notif["type"], "ℹ️")
+                    st.markdown(f"""
+                    <div style='background:{bg_c};border:1px solid {border_c};border-left:3px solid {text_c};
+                         border-radius:8px;padding:10px 12px;margin-bottom:6px;opacity:{lu_opacity};'>
+                        <div style='font-size:0.8rem;color:{text_c};font-weight:600;margin-bottom:3px;'>{icon} {notif["type"].upper()}</div>
+                        <div style='font-size:0.82rem;color:#c4d4e3;'>{notif["message"]}</div>
+                        <div style='font-size:0.72rem;color:#4a6080;margin-top:4px;'>{notif["timestamp"]}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                if non_lues:
+                    if st.button("✓ Marquer tout comme lu", key="mark_read", use_container_width=True):
+                        mark_notifications_read(nom)
+                        st.rerun()
+
+            # Planning personnel
+            st.markdown("<div class='section-title' style='font-size:1rem; margin-top:16px;'>📅 Mes Shifts</div>", unsafe_allow_html=True)
+            planning_live = store_data["planning"]
+            jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"]
+            shifts_count = 0
+            for jour in jours:
+                matin = nom in planning_live.get(jour, {}).get("matin", [])
+                am    = nom in planning_live.get(jour, {}).get("apres_midi", [])
+                if matin or am:
+                    shifts_count += 1
+                    if matin and am:
+                        label_shift = "🌞 Journée"
+                        color = "#63b3ed"
+                    elif matin:
+                        label_shift = "🌅 Matin"
+                        color = "#f6ad55"
+                    else:
+                        label_shift = "🌆 Après-midi"
+                        color = "#68d391"
+                    st.markdown(f"""
+                    <div style='display:flex;justify-content:space-between;align-items:center;
+                         background:rgba(99,179,237,0.06);border:1px solid rgba(99,179,237,0.12);
+                         border-radius:8px;padding:8px 12px;margin-bottom:5px;'>
+                        <span style='color:#e8eaf0;font-size:0.85rem;font-weight:500;'>{jour.capitalize()}</span>
+                        <span style='color:{color};font-size:0.82rem;font-weight:600;'>{label_shift}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+            if shifts_count == 0:
+                st.markdown("<p style='color:#4a6080;font-size:0.82rem;'>Aucun shift planifié cette semaine.</p>", unsafe_allow_html=True)

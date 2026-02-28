@@ -80,8 +80,8 @@
       "employe": "Karim Benali",
       "date": "2025-03-10",
       "type": "Congé payé",
-      "statut": "En attente",
-      "remplacant": null
+      "statut": "Validée",
+      "remplacant": "Thomas Dupont"
     },
     {
       "employe": "Karim Benali",
@@ -89,6 +89,13 @@
       "type": "Congé payé",
       "statut": "Validée",
       "remplacant": "Sophie Martin"
+    },
+    {
+      "employe": "Karim Benali",
+      "date": "2025-03-15",
+      "type": "Congé payé",
+      "statut": "En attente",
+      "remplacant": null
     }
   ],
   "historique_actions": [
@@ -216,6 +223,55 @@
         "jour": "lundi",
         "shift": "matin"
       }
+    },
+    {
+      "timestamp": "28/02/2026 06:17",
+      "action": "approve_absence",
+      "details": {
+        "employe": "Karim Benali",
+        "date": "2025-03-10",
+        "remplacant": "Thomas Dupont",
+        "conge_deduit": true,
+        "solde_apres": 9
+      }
+    },
+    {
+      "timestamp": "28/02/2026 06:36",
+      "action": "create_absence",
+      "details": {
+        "employe": "Karim Benali",
+        "date": "2025-03-15",
+        "type": "Congé payé",
+        "statut": "En attente",
+        "remplacant": null
+      }
+    }
+  ],
+  "employes_soldes": {
+    "Sophie Martin": 12,
+    "Thomas Dupont": 8,
+    "Marie Leroy": 15,
+    "Karim Benali": 9,
+    "Julie Bernard": 5,
+    "Pierre Moreau": 20
+  },
+  "planning_reference": {},
+  "notifications": [
+    {
+      "id": 1,
+      "destinataire": "Karim Benali",
+      "message": "Votre absence du 2025-03-10 (Congé payé) a été approuvée. Solde congés restant : 9j.",
+      "type": "success",
+      "timestamp": "28/02/2026 06:17",
+      "lu": false
+    },
+    {
+      "id": 2,
+      "destinataire": "Thomas Dupont",
+      "message": "Vous êtes désigné(e) remplaçant(e) de Karim Benali le 2025-03-10 (lundi).",
+      "type": "urgent",
+      "timestamp": "28/02/2026 06:17",
+      "lu": false
     }
   ]
 }
