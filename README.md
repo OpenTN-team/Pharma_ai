@@ -1,292 +1,161 @@
-# Pharma_ai
-Voici un **README complet, propre et professionnel** que vous pouvez copier directement dans votre projet (`README.md`).
+# PharmAssist – Assistant RH Intelligent pour Pharmacie d'Officine
+
+Prototype d’interface RH spécialisée pour pharmacies françaises, conforme à la **Convention Collective Nationale de la Pharmacie d’officine (IDCC 1996)**.
+
+Construit avec **Streamlit** et un agent IA qui combine logique déterministe (Python) et explications métier générées par LLM via **Hugging Face Inference API**.
 
 ---
 
-# 💊 Assistant RH Intelligent – Pharmacie des Lilas
-
-Prototype d’agent IA spécialisé en gestion RH pour pharmacie d’officine française.
-
-Ce projet démontre comment un assistant IA peut :
-
-* Gérer les absences
-* Proposer des remplacements conformes
-* Respecter les contraintes légales françaises
-* Expliquer ses décisions en langage métier
-
-⚠️ Il s’agit d’un **prototype démonstratif** (Proof of Concept), pas d’un produit final.
-
----
-
-# 🎯 Objectif du Projet
-
-Construire un agent RH intelligent capable de :
-
-* Comprendre les contraintes métier d’une pharmacie française
-* Appliquer des règles déterministes côté Python
-* Utiliser un LLM uniquement pour l’explication métier
-* Fournir une interface simple via Streamlit
-
-Le projet est basé sur la réglementation française, notamment :
-
-* Convention Collective Nationale de la pharmacie d'officine (IDCC 1996)
-* Durée légale de 35h/semaine
-* Maximum 10h/jour
-* Présence obligatoire d’un Pharmacien Diplômé d’État (PDE)
-
----
-
-# 🏗 Architecture du Projet
+## 📁 Structure du projet
 
 ```
-pharma_ai/
-│
+pharmassist/
+├── .gitignore
+├── README.md
+├── Rulesengine.py
+├── agent.py
 ├── app.py
-│
 ├── data.py
-│
-└── agent/
-    ├── agent.py
-    └── rules.py
+├── pdf_export.py
+├── pharmassist_store.json
+├── requirements.txt
+├── store.py
+└── tools.py
 ```
 
----
+### Description des fichiers
 
-# 📁 Description des Modules
-
-## 1️⃣ `app.py`
-
-Interface utilisateur via Streamlit.
-
-Responsabilités :
-
-* Affichage du dashboard
-* Gestion des inputs utilisateur
-* Appel des fonctions de l’agent
-* Affichage des réponses
-
-Ce fichier ne contient aucune logique métier.
+- `app.py` → Interface principale Streamlit (Dashboard, Planning, Portail Employé)
+- `agent.py` → Agent IA conversationnel (Manager / Employé)
+- `Rulesengine.py` → Moteur de règles métier & conformité IDCC 1996
+- `tools.py` → Outils disponibles pour l’agent (planning, absences, notifications…)
+- `store.py` → Gestion de la persistance JSON
+- `data.py` → Données initiales & structures
+- `pdf_export.py` → Génération PDF (planning + conformité)
+- `pharmassist_store.json` → Stockage des données (planning, absences, logs…)
+- `requirements.txt` → Dépendances Python
 
 ---
 
-## 2️⃣ `data/`
+## 🚀 Fonctionnalités actuelles
 
-Contient toutes les données locales au format JSON.
+### Dashboard principal (Manager)
+- Vue d’ensemble en temps réel :
+  - Taux de couverture global (%)
+  - Nombre d’employés actifs
+  - Nombre de pharmaciens PDE
+  - Absences ce mois
+  - Alertes actives
+  - Score de conformité IDCC 1996 (détails critiques/mineures)
+- Métriques mises à jour dynamiquement via moteur de règles
 
-### `employees.json`
+### Gestion du planning
+- Affichage clair du planning hebdomadaire (matin / après-midi par jour)
+- Vue par employé : présence, rôle (PDE / Préparateur), heures contractuelles
+- Graphiques d’effectif par jour (barres matin/après-midi)
+- Comparaison heures planifiées vs légales (jauge)
 
-Liste des employés de la pharmacie :
+### Gestion des employés
+- Liste complète de l’équipe avec :
+  - Avatar coloré selon rôle
+  - Nom, rôle, disponibilités hebdomadaires
+  - Heures contractuelles
+  - Soldes de congés restants
+- Formulaire rapide pour créer une demande d’absence
+- Liste des absences en attente avec boutons Approuver / Rejeter
 
-* Nom
-* Rôle
-* Statut PDE
-* Heures contractuelles
+### Conformité & Violations (IDCC 1996)
+- Rapport détaillé :
+  - Score global (couleur selon gravité)
+  - Nombre de vérifications
+  - Violations critiques
+  - Violations mineures
+- Cercle de score visuel + camembert de répartition
 
-### `schedule.json`
+### Portail Employé (mode restreint)
+- Sélection d’identité via sidebar (isolation stricte des données)
+- Espace personnel :
+  - Informations employé (nom, rôle, solde congés)
+  - Chat RH dédié
+  - Suggestions rapides
+  - Notifications personnelles + broadcast
+  - Planning personnel hebdomadaire
 
-Planning hebdomadaire (initialement vide).
+### Agent IA conversationnel
+- Mode Manager : accès complet
+- Mode Employé : accès restreint
+- Outils disponibles :
+  - Consultation planning global / personnel
+  - Création / approbation / rejet d’absences
+  - Modification planning
+  - Génération planning automatique
+  - Notifications ciblées ou broadcast
+- Réponses professionnelles en français avec référence aux règles IDCC 1996 si pertinent
 
-### `constraints.json`
-
-Contraintes légales :
-
-* Maximum hebdomadaire
-* Maximum journalier
-* Obligation PDE
-* Référence convention collective
-
----
-
-## 3️⃣ `agent/rules.py`
-
-Logique métier déterministe (Python pur).
-
-Responsabilités :
-
-* Chargement des données
-* Recherche de remplaçant
-* Vérification basique des règles
-
-⚠️ Aucune IA ici.
-
-C’est le moteur décisionnel.
-
----
-
-## 4️⃣ `agent/agent.py`
-
-Couche IA.
-
-Responsabilités :
-
-* Appeler l’API OpenAI
-* Générer une explication métier professionnelle
-* Mentionner la réglementation française
-* Reformuler les décisions prises par Python
-
-⚠️ Le LLM explique, mais ne décide pas.
-
----
-
-# 🧠 Cas d’Usage Implémentés
-
-## ✅ Cas 1 — Gestion d’absence
-
-Entrée :
-
-```
-Marie est absente
-```
-
-Processus :
-
-1. Python identifie son rôle
-2. Cherche un employé compatible
-3. Vérifie contraintes basiques
-4. Le LLM explique la décision
-
-Sortie :
-Explication conforme au droit du travail français.
+### Autres fonctionnalités
+- Thème sombre/clair toggle
+- Historique complet des actions RH (timestamp + détails)
+- Export PDF planning & conformité
+- Notifications persistantes
+- Persistance JSON
 
 ---
 
-## 🔜 Cas prévus (Phase suivante)
+## 🛠 Technologies utilisées
 
-* Génération automatique de planning hebdomadaire
-* Détection des périodes à risque (ex : période grippale)
-* KPI RH (taux couverture, heures planifiées)
-
----
-
-# ⚙️ Prérequis
-
-* Python 3.9+
-* Clé API OpenAI
-* pip
+- **Interface** : Streamlit  
+- **Agent IA** : Hugging Face Inference API  
+- **Backend logique métier** : Python  
+- **Stockage** : JSON  
+- **Export PDF** : Python (génération locale)
 
 ---
 
-# 📦 Installation
-
-Clonez le projet :
+## ⚙️ Installation
 
 ```bash
-git clone <repo_url>
-cd pharma_ai
-```
-
-Installez les dépendances :
-
-```bash
-pip install streamlit openai
-```
-
----
-
-# 🔑 Configuration OpenAI
-
-Ajoutez votre clé API en variable d’environnement :
-
-### Windows
-
-```bash
-setx OPENAI_API_KEY "votre_cle_api"
-```
-
-### Mac / Linux
-
-```bash
-export OPENAI_API_KEY="votre_cle_api"
+git clone <votre-repo>
+cd pharmassist
+python -m venv .venv
+source .venv/bin/activate    # Linux/Mac
+.venv\Scripts\activate       # Windows
+pip install -r requirements.txt
 ```
 
 ---
 
-# 🚀 Lancement de l’Application
+## 🔐 Configuration API 
 
-Dans le dossier racine :
+Créer un fichier `.env` à la racine du projet :
+
+```env
+HF_API_KEY=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 
+```
+
+Ou définir la variable d’environnement :
+
+```bash
+export HF_API_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxx   # Linux/Mac
+set HF_API_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxx      # Windows
+```
+
+⚠️ Important :
+- Ne jamais commit votre token sur GitHub
+- Assurez-vous que `.env` est dans `.gitignore`
+
+---
+
+## ▶️ Lancement
 
 ```bash
 streamlit run app.py
 ```
 
-L’application sera accessible sur :
-
-```
-http://localhost:8501
-```
-
 ---
 
-# 🖥 Utilisation
+## 👨‍💻 Auteur
 
-1. Ouvrir l’application
-2. Entrer le nom d’un employé absent
-3. Cliquer sur "Trouver un remplaçant"
-4. Lire l’explication générée
-
----
-
-# 🧩 Choix Architecturaux
-
-## Séparation stricte :
-
-| Composant | Rôle        |
-| --------- | ----------- |
-| Python    | Décision    |
-| LLM       | Explication |
-| JSON      | Stockage    |
-| Streamlit | Interface   |
-
----
-
-## Pourquoi cette approche ?
-
-* Fiabilité (la logique n’est pas déléguée à l’IA)
-* Contrôle métier
-* Transparence décisionnelle
-* Prototype robuste en 9h
-
----
-
-# 🔐 Limites Actuelles
-
-* Pas de gestion complète des heures cumulées
-* Pas d’optimisation avancée
-* Données statiques
-* Pas de base de données
-
----
-
-# 🏁 Roadmap Possible
-
-* Intégration base SQLite
-* Gestion réelle des heures planifiées
-* Optimisation automatique du planning
-* Historique des décisions
-* Dashboard KPI avancé
-
----
-
-# 🏆 Positionnement Stratégique
-
-Ce projet démontre :
-
-* Compréhension métier pharmacie française
-* Architecture IA propre
-* Séparation décision / explication
-* Approche pragmatique et démontrable
-
-Ce n’est pas un chatbot générique.
-
-C’est un agent métier spécialisé.
-
----
-
-# 👤 Auteur
-
-Wassim Gasmi
-Projet démonstratif – Assistant RH IA
-2026
-
----
-
+**Wassim Gasmi**  
+**Maram Namouchi**  
+Prototype RH IA pour pharmacie d’officine  
+Hackathon 2026 – Tunis, Tunisie
