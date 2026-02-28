@@ -1,39 +1,14 @@
-import google.generativeai as genai
-from data import get_contexte_complet, EMPLOYES, ABSENCES, PLANNING_SEMAINE
+from groq import Groq
+from data import get_contexte_complet, EMPLOYES
+
+# ============================================================
+# CONFIGURATION GROQ
+# ============================================================
 
 def configurer_gemini(api_key: str):
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash-lite",
-        system_instruction=f"""
-Tu es PharmAssist, un agent RH intelligent spécialisé pour les pharmacies françaises.
-Tu travailles pour la Pharmacie des Lilas à Lyon.
-
-TES RESPONSABILITÉS:
-1. Gérer les plannings des employés en respectant la Convention Collective Pharmacie (IDCC 1996)
-2. Traiter les demandes d'absence et proposer des remplaçants qualifiés
-3. Anticiper les périodes de surcharge (début de mois, épidémies saisonnières)
-4. Garantir qu'un Pharmacien Diplômé d'État (PDE) est TOUJOURS présent à l'ouverture
-5. Respecter les 35h/semaine et le repos obligatoire
-
-RÈGLES ABSOLUES:
-- JAMAIS de créneau sans pharmacien diplômé (PDE)
-- Maximum 10h de travail par jour par employé
-- Respecter les disponibilités de chaque employé
-- Prioriser les remplaçants disponibles et qualifiés
-
-DONNÉES EN TEMPS RÉEL:
-{get_contexte_complet()}
-
-STYLE DE RÉPONSE:
-- Réponds toujours en français
-- Sois précis, professionnel et bienveillant
-- Indique toujours la règle légale appliquée quand tu prends une décision
-- Si une absence crée un problème de couverture PDE, signale-le en ALERTE
-- Formate tes réponses clairement avec des sections quand nécessaire
-        """
-    )
-    return model
+    """Configure le client Groq (nom gardé pour compatibilité avec app.py)"""
+    client = Groq(api_key=api_key)
+    return client
 
 
 def trouver_remplacant(employe_absent: str, jour: str) -> dict:
@@ -70,9 +45,10 @@ def trouver_remplacant(employe_absent: str, jour: str) -> dict:
     }
 
 
-def chat_avec_agent(model, historique: list, message_user: str) -> str:
+def chat_avec_agent(client, historique: list, message_user: str) -> str:
     try:
-        mots_absence = ["absent", "absente", "malade", "conge", "remplacer", "remplacement"]
+        # Détecter absence et enrichir le message
+        mots_absence = ["absent", "absente", "malade", "conge", "congé", "remplacer", "remplacement"]
         message_enrichi = message_user
 
         if any(mot in message_user.lower() for mot in mots_absence):
@@ -85,19 +61,45 @@ def chat_avec_agent(model, historique: list, message_user: str) -> str:
                     message_enrichi = f"{message_user}\n\n[ANALYSE SYSTEME: Employe={emp['nom']}, Role={emp['role']}, Resultat={resultat}]"
                     break
 
-        historique.append({
-            "role": "user",
-            "parts": [{"text": message_enrichi}]
-        })
+        # Ajouter à l'historique
+        historique.append({"role": "user", "content": message_enrichi})
 
-        chat = model.start_chat(history=historique[:-1])
-        response = chat.send_message(message_enrichi)
-        reponse_text = response.text
+        # Appel Groq
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": f"""Tu es PharmAssist, un agent RH intelligent spécialisé pour les pharmacies françaises.
+Tu travailles pour la Pharmacie des Lilas à Lyon.
 
-        historique.append({
-            "role": "model",
-            "parts": [{"text": reponse_text}]
-        })
+TES RESPONSABILITÉS:
+1. Gérer les plannings des employés en respectant la Convention Collective Pharmacie (IDCC 1996)
+2. Traiter les demandes d'absence et proposer des remplaçants qualifiés
+3. Anticiper les périodes de surcharge (début de mois, épidémies saisonnières)
+4. Garantir qu'un Pharmacien Diplômé d'État (PDE) est TOUJOURS présent à l'ouverture
+5. Respecter les 35h/semaine et le repos obligatoire
+
+RÈGLES ABSOLUES:
+- JAMAIS de créneau sans pharmacien diplômé (PDE)
+- Maximum 10h de travail par jour par employé
+- Respecter les disponibilités de chaque employé
+
+DONNÉES EN TEMPS RÉEL:
+{get_contexte_complet()}
+
+STYLE: Réponds toujours en français, sois précis et professionnel.
+Cite toujours la règle légale appliquée dans tes décisions."""
+                }
+            ] + historique,
+            max_tokens=1024,
+            temperature=0.7,
+        )
+
+        reponse_text = response.choices[0].message.content
+
+        # Sauvegarder la réponse
+        historique.append({"role": "assistant", "content": reponse_text})
 
         return reponse_text
 
